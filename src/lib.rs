@@ -5,20 +5,34 @@ pub mod jsonfs {
     use std::path::{Path, Component};
     use std::ffi::OsStr;
     use std::collections::HashMap;
+    use raw::RawFSFileType;
+    use file::LocalFSFileType;
 
-    pub trait FSFileTypeFactory {
-        fn new(pointer: String) -> Box<FSFileType>;
+    #[derive(Debug)]
+    pub enum FSFileType {
+        Raw(raw::RawFSFileType),
+        Local(file::LocalFSFileType)
     }
 
-    pub trait FSFileType: Debug {
+    pub trait FSFileTypeOps {
         fn read(&self, offset: i64) -> &[u8];
     }
 
-    fn parse_file_type(type_descriptor: &str, pointer: String) -> Result<Box<dyn FSFileType>, DescriptorError> {
-        match type_descriptor {
-            "raw" => Ok(raw::RawFSFileType::new(pointer)),
-            "file" => Ok(file::LocalFSFileType::new(pointer)),
-            _ => Err(DescriptorError)
+    impl FSFileType {
+
+        fn parse_file_type(type_descriptor: &str, pointer: String) -> Result<FSFileType, DescriptorError> {
+            match type_descriptor {
+                "raw" => Ok(FSFileType::Raw(raw::RawFSFileType::new(pointer))),
+                "file" => Ok(FSFileType::Local(LocalFSFileType::new(pointer))),
+                _ => Err(DescriptorError)
+            }
+        }
+
+        fn ops(&self) -> &FSFileTypeOps {
+            match self {
+                FSFileType::Raw(s) => s,
+                FSFileType::Local(s) => s
+            }
         }
     }
 
@@ -26,7 +40,7 @@ pub mod jsonfs {
     pub enum FSEntry {
         File {
             name: String,
-            file_type: Box<dyn FSFileType>
+            file_type: FSFileType
         },
         Dir {
             name: String,
@@ -67,7 +81,7 @@ pub mod jsonfs {
         fn create_file(filename: String, file_descriptor: String) -> Result<FSEntry, DescriptorError> {
             let (descriptor_type, descriptor_pointer) = file_descriptor.split_at(file_descriptor.find(':').ok_or(DescriptorError)?);
 
-            let fs_entry_type = parse_file_type(descriptor_type, descriptor_pointer.to_string())?;
+            let fs_entry_type = FSFileType::parse_file_type(descriptor_type, descriptor_pointer[1..].to_string())?;
 
             Ok(FSEntry::File {
                 name: filename,
@@ -129,49 +143,47 @@ pub mod jsonfs {
     }
 
     mod raw {
-        use super::FSFileType;
-        use super::FSFileTypeFactory;
+        use super::*;
 
         #[derive(Debug)]
         pub struct RawFSFileType {
-            data: String
+            pub data: String
         }
 
-        impl FSFileType for RawFSFileType {
-            fn read(&self, offset: i64) -> &[u8] {
-                &self.data.as_bytes()[offset as usize..]
+        impl RawFSFileType {
+            pub fn new(pointer: String) -> RawFSFileType {
+                RawFSFileType {
+                    data: pointer
+                }
             }
         }
 
-        impl FSFileTypeFactory for RawFSFileType {
-            fn new(pointer: String) -> Box<FSFileType> {
-                Box::new(RawFSFileType {
-                    data: pointer
-                })
+        impl FSFileTypeOps for RawFSFileType {
+            fn read(&self, offset: i64) -> &[u8] {
+                &self.data.as_bytes()[offset as usize..]
             }
         }
     }
 
     mod file {
-        use super::FSFileType;
-        use super::FSFileTypeFactory;
+        use super::*;
 
         #[derive(Debug)]
         pub struct LocalFSFileType {
-            file_path: String
+            pub file_path: String
         }
 
-        impl FSFileType for LocalFSFileType {
+        impl FSFileTypeOps for LocalFSFileType {
             fn read(&self, offset: i64) -> &[u8] {
                 unimplemented!()
             }
         }
 
-        impl FSFileTypeFactory for LocalFSFileType {
-            fn new(pointer: String) -> Box<FSFileType> {
-                Box::new(LocalFSFileType {
+        impl LocalFSFileType {
+            pub fn new(pointer: String) -> LocalFSFileType {
+                LocalFSFileType {
                     file_path: pointer
-                })
+                }
             }
         }
     }
@@ -187,6 +199,30 @@ pub mod jsonfs {
                 let e = $entry;
                 if let FSEntry::File { name, file_type: _ } = e {
                     assert_eq!(name, ($filename))
+                } else {
+                    panic!("Entry is not a FSEntry::File")
+                }
+            });
+        }
+
+        macro_rules! assert_file_local_file_path {
+            ($entry:expr, $file_name:expr) => ({
+                let (e, f) = ($entry, $file_name);
+                if let FSEntry::File { name, file_type: FSFileType::Local(loc) } = e {
+                        assert_eq!(loc.file_path, f);
+
+                } else {
+                    panic!("Entry is not a FSEntry::File")
+                }
+            });
+        }
+
+        macro_rules! assert_file_raw_data {
+            ($entry:expr, $data:expr) => ({
+                let (e, f) = ($entry, $data);
+                if let FSEntry::File { name, file_type: FSFileType::Raw(loc) } = e {
+                        assert_eq!(loc.data, f);
+
                 } else {
                     panic!("Entry is not a FSEntry::File")
                 }
@@ -213,7 +249,7 @@ pub mod jsonfs {
                         entries: vec![
                             FSEntry::File {
                                 name: "file.txt".to_string(),
-                                file_type: RawFSFileType::new("abc".to_string())
+                                file_type: FSFileType::Raw(RawFSFileType::new("abc".to_string()))
                             }
                         ]
                     }
@@ -228,7 +264,7 @@ pub mod jsonfs {
                 entries: vec![
                     FSEntry::File {
                         name: "file.txt".to_string(),
-                        file_type: RawFSFileType::new("abc".to_string())
+                        file_type: FSFileType::Raw(RawFSFileType::new("abc".to_string()))
                     }
                 ]
             };
@@ -245,7 +281,7 @@ pub mod jsonfs {
                 entries: vec![
                     FSEntry::File {
                         name: "file.txt".to_string(),
-                        file_type: RawFSFileType::new("abc".to_string())
+                        file_type: FSFileType::Raw(RawFSFileType::new("abc".to_string()))
                     }
                 ]
             };
@@ -262,7 +298,7 @@ pub mod jsonfs {
                 entries: vec![
                     FSEntry::File {
                         name: "file.txt".to_string(),
-                        file_type: RawFSFileType::new("abc".to_string())
+                        file_type: FSFileType::Raw(RawFSFileType::new("abc".to_string()))
                     },
                     FSEntry::Dir {
                         name: "bla".to_string(),
@@ -324,14 +360,15 @@ pub mod jsonfs {
             let fs_tree = result.unwrap();
 
             assert_dir_name!(fs_tree.walk("/".to_string()).unwrap(), "");
-            assert_file_name!(fs_tree.walk("/file.txt".to_string()).unwrap(), "file.txt")
+            assert_file_name!(fs_tree.walk("/file.txt".to_string()).unwrap(), "file.txt");
+            assert_file_raw_data!(fs_tree.walk("/file.txt".to_string()).unwrap(), "abc");
         }
 
         #[test]
         fn load_local_file_type() {
             let json = r#"
                 {
-                    "file.txt": "/my_file.txt"
+                    "file.txt": "file:/my_file.txt"
                 }"#;
 
             let result = FSEntry::new(serde_json::from_str(json).unwrap());
@@ -341,14 +378,7 @@ pub mod jsonfs {
 
             assert_dir_name!(fs_tree.walk("/".to_string()).unwrap(), "");
             assert_file_name!(fs_tree.walk("/file.txt".to_string()).unwrap(), "file.txt");
-
-            if let FSEntry::File { name, file_type: b } = fs_tree.walk("/file.txt".to_string()).unwrap() {
-                if let LocalFSFileType {file_path} = *b {
-                    assert_eq!(file_path, "/my_file.txt");
-                }
-            } else {
-                panic!("Entry is not a FSEntry::File")
-            }
+            assert_file_local_file_path!(fs_tree.walk("/file.txt".to_string()).unwrap(),  "/my_file.txt");
         }
     }
 }
