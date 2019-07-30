@@ -380,5 +380,24 @@ pub mod jsonfs {
             assert_file_name!(fs_tree.walk("/file.txt".to_string()).unwrap(), "file.txt");
             assert_file_local_file_path!(fs_tree.walk("/file.txt".to_string()).unwrap(),  "/my_file.txt");
         }
+
+        #[test]
+        fn load_nested() {
+            let json = r#"
+                {
+                    "file.txt": "file:/my_file.txt",
+                    "nested": {
+                        "nested.txt": "raw:cba"
+                    }
+                }"#;
+
+            let result = FSEntry::new(serde_json::from_str(json).unwrap());
+            assert!(result.is_ok());
+
+            let fs_tree = result.unwrap();
+
+            assert_dir_name!(fs_tree.walk("/nested".to_string()).unwrap(), "nested");
+            assert_file_name!(fs_tree.walk("/nested/nested.txt".to_string()).unwrap(), "nested.txt");
+        }
     }
 }
