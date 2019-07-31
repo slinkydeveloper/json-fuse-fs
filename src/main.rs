@@ -1,8 +1,14 @@
+#[macro_use] extern crate log;
+
+mod fs;
+
 use std::fs::File;
 use std::io::{BufReader, Error};
 use std::env;
 use serde_json::Value;
-use json_fuse_fs::jsonfs::FSEntry;
+use json_fuse_fs::FSEntry;
+use std::ffi::{OsStr, OsString};
+use fs::JsonFS;
 
 fn load_json(path: &str) -> Result<Value, Error> {
     // Open the file in read-only mode with buffer.
@@ -15,15 +21,29 @@ fn load_json(path: &str) -> Result<Value, Error> {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    env_logger::init();
 
-    let filename = args.get(1).expect(format!("Usage: {} [json_descriptor]", args[0]).as_str());
+    let args: Vec<OsString> = env::args_os().collect();
+    let executable_name = args[0].to_str().unwrap();
 
-    let j = load_json(filename).expect(format!("Cannot load {}", filename).as_str());
+    if let (Some(filename), Some(mountpoint)) = (args.get(1).and_then(|s| s.to_str()), args.get(2)) {
+        let j = load_json(filename).expect(format!("Cannot load {}", filename).as_str());
 
-    println!("{:?}", j);
+        let parsed_fs_tree = FSEntry::new(j)?;
+        let inode_map = parsed_fs_tree.generate_inode_map();
 
-    let parsed_fs_tree = FSEntry::new(j);
+        let fs = JsonFS::new(parsed_fs_tree, inode_map);
 
-    println!("{:?}", parsed_fs_tree);
+        debug!("Parsed FS Tree: {:?}", parsed_fs_tree);
+
+        let options = ["-o", "ro", "-o", "fsname=jsonfs"]
+            .iter()
+            .map(|o| o.as_ref())
+            .collect::<Vec<&OsStr>>();
+
+        fuse::mount(fs, mountpoint, &options).unwrap();
+    } else {
+        panic!("Usage: {} [json_descriptor] [mountpoint]", executable_name)
+    }
+
 }
