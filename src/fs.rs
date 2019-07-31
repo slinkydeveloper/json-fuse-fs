@@ -2,18 +2,51 @@ use fuse::{FileType, FileAttr, Filesystem, Request, ReplyData, ReplyEntry, Reply
 use bimap::BiHashMap;
 use super::*;
 use std::time::{Duration, SystemTime};
-use libc::{ENOENT, ENOSYS};
+use libc::ENOENT;
+use std::collections::HashMap;
+use std::convert::TryInto;
 
 const TTL: Duration = Duration::from_secs(1);
 
 pub struct JsonFS<'a> {
-    fs_tree_root: FSEntry,
-    inode: BiHashMap<u64, &'a FSEntry>
+    fs_tree_root: &'a FSEntry,
+    inode: BiHashMap<u64, &'a FSEntry>,
+    dir_listing: HashMap<u64, Vec<(u64, FileType, &'a OsStr)>>
 }
 
 impl JsonFS<'_> {
-    pub fn new(fs_tree_root: FSEntry, inode: BiHashMap<u64, &FSEntry>) -> JsonFS {
-        JsonFS { fs_tree_root, inode }
+    pub fn new(fs_tree_root: &FSEntry) -> JsonFS {
+        let inode = fs_tree_root.generate_inode_map();
+        let dir_listing = JsonFS::generate_dir_listing(&inode);
+        info!("Inode map: {:?}", inode);
+        JsonFS { fs_tree_root, inode, dir_listing }
+    }
+
+    fn generate_dir_listing<'a>(inode: &BiHashMap<u64, &'a FSEntry>) ->HashMap<u64, Vec<(u64, FileType, &'a OsStr)>> {
+        let mut result = HashMap::new();
+
+        for (ino, entry) in inode.iter() {
+            if let FSEntry::Dir {name, entries} = entry {
+                let mut dir_listing: Vec<(u64, FileType, &'a OsStr)> = vec![(*ino, FileType::Directory, &OsStr::new(".")), (*ino, FileType::Directory, &OsStr::new(".."))];
+                dir_listing.extend(
+                    entries
+                        .iter()
+                        .map(|e| (inode.get_by_right(&e).unwrap(), e))
+                        .map(|(i, e)| {
+                            match e {
+                                FSEntry::Dir {name, entries} => (*i, FileType::Directory, OsStr::new(name)),
+                                FSEntry::File {name, file_type} => (*i, FileType::RegularFile, OsStr::new(name))
+                            }
+                        })
+                        .collect::<Vec<(u64, FileType, &'a OsStr)>>()
+                );
+                result.insert(*ino, dir_listing);
+            }
+        }
+
+        info!("Generated dir listing: {:?}", result);
+
+        result
     }
 
     fn generate_dir_attr(&self, inode: u64) -> FileAttr {
@@ -34,14 +67,31 @@ impl JsonFS<'_> {
             flags: 0
         }
     }
+
+    fn get_entry_attr(&self, entry: &FSEntry, inode: u64) -> FileAttr {
+        match entry {
+            FSEntry::File {name, file_type} => file_type.ops().get_attributes(inode),
+            FSEntry::Dir {name, entries } => self.generate_dir_attr(inode)
+        }
+    }
 }
 
 // https://github.com/libfuse/libfuse/blob/e16fdc06d7473f00499b6b03fb7bd06259a22135/include/fuse.h#L290
 impl Filesystem for JsonFS<'_> {
 
-    fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
-        debug!("Lookup for name: {}, parent: {}", name.to_str().unwrap(), parent);
-        reply.error(ENOSYS);
+    fn lookup(&mut self, _req: &Request, parent: u64, lookup_name: &OsStr, reply: ReplyEntry) {
+        info!("lookup for name: {} parent: {}", lookup_name.to_str().unwrap(), parent);
+        if let Some(FSEntry::Dir {name, entries}) = self.inode.get_by_left(&parent) {
+            info!("lookup in dir: {:?}, {:?}", name, entries);
+            if let Some(entry) = entries
+                .iter()
+                .find(|e| e.name() == lookup_name.to_str().unwrap()) {
+                info!("found! name: {:?}", entry);
+                reply.entry(&TTL, &self.get_entry_attr(entry, *self.inode.get_by_right(&entry).unwrap()), 0);
+                return;
+            }
+        }
+        reply.error(ENOENT);
     }
 
     /** Get file attributes.
@@ -54,14 +104,13 @@ impl Filesystem for JsonFS<'_> {
      * may also be NULL if the file is open.
      */
     fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
+        info!("getattr for {}", ino);
         if let Some(entry) = self.inode.get_by_left(&ino) {
             reply.attr(
                 &TTL,
-                &match entry {
-                    FSEntry::File {name, file_type} => file_type.ops().get_attributes(ino),
-                    FSEntry::Dir {name, entries } => self.generate_dir_attr(ino)
-                }
+                &self.get_entry_attr(entry, ino)
             );
+            return;
         }
         reply.error(ENOENT);
     }
@@ -76,6 +125,7 @@ impl Filesystem for JsonFS<'_> {
      * this operation.
      */
     fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, _size: u32, reply: ReplyData) {
+        info!("read for {} at offset {}", ino, offset);
         if let Some(FSEntry::File {name, file_type}) = self.inode.get_by_left(&ino) {
             if let Some(data) = file_type.ops().read(offset) {
                 reply.data(data);
@@ -101,18 +151,17 @@ impl Filesystem for JsonFS<'_> {
      * '1'.
      */
     fn readdir(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, mut reply: ReplyDirectory) {
-        if let Some(FSEntry::Dir {name, entries}) = self.inode.get_by_left(&ino) {
-            reply.add(ino, 0, FileType::Directory, ".");
-            entries
-                .iter()
-                .map(|e| (self.inode.get_by_right(&e).unwrap(), e))
-                .for_each(|(i, e)| {
-                    match e {
-                        FSEntry::Dir {name, entries} => reply.add(*i, 0, FileType::Directory, name),
-                        FSEntry::File {name, file_type} => reply.add(*i, 0, FileType::RegularFile, name)
-                    };
-                });
+        info!("readdir for {} and offset {}", ino, offset);
+        if let Some(dir_entries) = self.dir_listing.get(&ino) {
+            if offset < dir_entries.len().try_into().unwrap() {
+                dir_entries
+                    .iter()
+                    .skip(offset as usize)
+                    .enumerate()
+                    .find(|(i, (inode, f, s))| reply.add(*inode, *i as i64 + 1, *f, s));
+            }
             reply.ok();
+            return;
         }
         reply.error(ENOENT);
     }

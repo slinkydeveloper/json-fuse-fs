@@ -29,12 +29,11 @@ fn main() {
     if let (Some(filename), Some(mountpoint)) = (args.get(1).and_then(|s| s.to_str()), args.get(2)) {
         let j = load_json(filename).expect(format!("Cannot load {}", filename).as_str());
 
-        let parsed_fs_tree = FSEntry::new(j)?;
-        let inode_map = parsed_fs_tree.generate_inode_map();
+        let parsed_fs_tree = FSEntry::new(j).unwrap();
 
-        let fs = JsonFS::new(parsed_fs_tree, inode_map);
+        info!("Parsed FS Tree: {:?}", parsed_fs_tree);
 
-        debug!("Parsed FS Tree: {:?}", parsed_fs_tree);
+        let fs = JsonFS::new(&parsed_fs_tree);
 
         let options = ["-o", "ro", "-o", "fsname=jsonfs"]
             .iter()

@@ -1,3 +1,6 @@
 {
-  "descriptor.json": "raw:blabla"
+  "descriptor.json": "raw:blabla",
+  "nested": {
+    "another_file.json": "raw:abc"
+  }
 }

@@ -11,7 +11,6 @@ impl FSFileTypeOps for LocalFSFileType {
     fn get_attributes(&self, inode: u64) -> FileAttr {
         unimplemented!()
     }
-
     fn read(&self, offset: i64) -> Option<&[u8]> {
         unimplemented!()
     }

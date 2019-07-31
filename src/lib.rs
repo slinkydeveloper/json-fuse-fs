@@ -300,13 +300,13 @@ mod tests {
     fn generate_inode_map() {
         let fs_tree = nested_structure();
 
-        let map: HashMap<u64, &FSEntry> = fs_tree.generate_inode_map();
+        let map: BiHashMap<u64, &FSEntry> = fs_tree.generate_inode_map();
 
         assert_eq!(map.len(), 3);
 
-        assert_dir_name!(map.get(&(1 as u64)).unwrap(), "");
-        assert_dir_name!(map.get(&(2 as u64)).unwrap(), "bla");
-        assert_file_name!(map.get(&(3 as u64)).unwrap(), "file.txt");
+        assert_dir_name!(map.get_by_left(&(1 as u64)).unwrap(), "");
+        assert_dir_name!(map.get_by_left(&(2 as u64)).unwrap(), "bla");
+        assert_file_name!(map.get_by_left(&(3 as u64)).unwrap(), "file.txt");
     }
 
     #[test]
