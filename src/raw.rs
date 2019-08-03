@@ -41,7 +41,7 @@ impl FSFileTypeOps for RawFSFileType {
         let off = offset as usize;
         if buffer.len() > self.data.len() - off {
             buffer[..self.data.len() - off].copy_from_slice(&self.data.as_bytes()[offset as usize..])
-        } else if buffer.len() < self.data.len() - off {
+        } else {
             buffer.copy_from_slice(&self.data.as_bytes()[offset as usize..buffer.len()])
         }
         Ok(())

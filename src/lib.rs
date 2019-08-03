@@ -1,5 +1,6 @@
 pub mod raw;
 pub mod local;
+pub mod http;
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Debug};
@@ -13,6 +14,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::borrow::Borrow;
+use crate::http::HttpFSFileType;
 
 #[derive(Debug)]
 pub struct FSNode {
@@ -32,6 +34,7 @@ pub enum FSEntry {
 pub enum FSFileType {
     Raw(RawFSFileType),
     Local(LocalFSFileType),
+    Http(HttpFSFileType)
 }
 
 impl FSNode {
@@ -148,7 +151,8 @@ impl FSFileType {
     fn parse_file_type(type_descriptor: &str, pointer: String) -> Result<FSFileType, DescriptorError> {
         match type_descriptor {
             "raw" => Ok(FSFileType::Raw(raw::RawFSFileType::new(pointer))),
-            "file" => Ok(FSFileType::Local(LocalFSFileType::new(pointer))),
+            "file" | "local" => Ok(FSFileType::Local(LocalFSFileType::new(pointer))),
+            "http" | "https" => Ok(FSFileType::Http(HttpFSFileType::new(format!("{}:{}", type_descriptor, pointer)))),
             _ => Err(DescriptorError)
         }
     }
@@ -156,7 +160,8 @@ impl FSFileType {
     pub fn ops(&self) -> &FSFileTypeOps {
         match self {
             FSFileType::Raw(s) => s,
-            FSFileType::Local(s) => s
+            FSFileType::Local(s) => s,
+            FSFileType::Http(s) => s
         }
     }
 }
