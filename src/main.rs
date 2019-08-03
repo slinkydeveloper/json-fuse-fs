@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::{BufReader, Error};
 use std::env;
 use serde_json::Value;
-use json_fuse_fs::FSEntry;
+use json_fuse_fs::{FSEntry, FSNode};
 use std::ffi::{OsStr, OsString};
 use fs::JsonFS;
 
@@ -29,11 +29,11 @@ fn main() {
     if let (Some(filename), Some(mountpoint)) = (args.get(1).and_then(|s| s.to_str()), args.get(2)) {
         let j = load_json(filename).expect(format!("Cannot load {}", filename).as_str());
 
-        let parsed_fs_tree = FSEntry::new(j).unwrap();
+        let (parsed_fs_tree, inode_map) = FSNode::new(j).unwrap();
 
         info!("Parsed FS Tree: {:?}", parsed_fs_tree);
 
-        let fs = JsonFS::new(&parsed_fs_tree);
+        let fs = JsonFS::new(parsed_fs_tree, inode_map);
 
         let options = ["-o", "ro", "-o", "fsname=jsonfs"]
             .iter()
