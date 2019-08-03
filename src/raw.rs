@@ -37,7 +37,13 @@ impl FSFileTypeOps for RawFSFileType {
         }
     }
 
-    fn read(&self, offset: i64) -> Option<&[u8]> {
-        Some(&self.data.as_bytes()[offset as usize..])
+    fn read(&self, offset: i64, buffer: &mut [u8]) -> io::Result<()> {
+        let off = offset as usize;
+        if buffer.len() > self.data.len() - off {
+            buffer[..self.data.len() - off].copy_from_slice(&self.data.as_bytes()[offset as usize..])
+        } else if buffer.len() < self.data.len() - off {
+            buffer.copy_from_slice(&self.data.as_bytes()[offset as usize..buffer.len()])
+        }
+        Ok(())
     }
 }

@@ -129,12 +129,20 @@ impl Filesystem for JsonFS {
      * value of the read system call will reflect the return value of
      * this operation.
      */
-    fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, _size: u32, reply: ReplyData) {
+    fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, size: u32, reply: ReplyData) {
         info!("read for {} at offset {}", ino, offset);
-        if let FSNode {entry: FSEntry::File(file_type), .. }  = self.inode.get(&ino).unwrap().upgrade().unwrap().borrow() {
-            if let Some(data) = file_type.ops().read(offset) {
-                reply.data(data);
+        if let FSNode { entry: FSEntry::File(file_type), .. }  = self.inode.get(&ino).unwrap().upgrade().unwrap().borrow() {
+            // Create the buf
+            let mut buffer = vec![0; size as usize];
+
+            let read_result = file_type.ops().read(offset, &mut buffer[..]);
+
+            // Read
+            if let Ok(()) = read_result {
+                reply.data(&buffer[..]);
                 return;
+            } else {
+                info!("Error while reading: {:?}", read_result.unwrap_err())
             }
         }
         reply.error(ENOENT);

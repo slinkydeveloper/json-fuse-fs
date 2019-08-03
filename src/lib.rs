@@ -3,7 +3,7 @@ pub mod local;
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Debug};
-use std::{fmt, iter};
+use std::{fmt, iter, io};
 use std::path::{Path, Component};
 use std::ffi::OsStr;
 use raw::RawFSFileType;
@@ -141,7 +141,7 @@ impl FSEntry {
 
 pub trait FSFileTypeOps {
     fn get_attributes(&self, inode: u64) -> FileAttr;
-    fn read(&self, offset: i64) -> Option<&[u8]>;
+    fn read(&self, offset: i64, buffer: &mut [u8]) -> io::Result<()>;
 }
 
 impl FSFileType {
