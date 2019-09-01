@@ -2,9 +2,7 @@ extern crate json_fuse_fs;
 
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use json_fuse_fs::*;
-use json_fuse_fs::local::LocalFSFileType;
 use json_fuse_fs::raw::RawFSFileType;
 use std::borrow::Borrow;
 
@@ -200,7 +198,7 @@ fn load_local_file_type() {
     let result = FSNode::new(serde_json::from_str(json).unwrap());
     assert!(result.is_ok());
 
-    let (fs_tree, inode_map) = result.unwrap();
+    let (fs_tree, _) = result.unwrap();
 
     assert_dir_name!(fs_tree.walk("/".to_string()).unwrap(), "");
     assert_file_name!(fs_tree.walk("/file.txt".to_string()).unwrap(), "file.txt");
@@ -220,7 +218,7 @@ fn load_nested() {
     let result = FSNode::new(serde_json::from_str(json).unwrap());
     assert!(result.is_ok());
 
-    let (fs_tree, inode_map) = result.unwrap();
+    let (fs_tree, _) = result.unwrap();
 
     assert_file_name!(fs_tree.walk("/nested/nested.txt".to_string()).unwrap(), "nested.txt");
 
