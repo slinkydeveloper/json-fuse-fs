@@ -16,6 +16,14 @@ pub struct LocalFSFileType {
     pub file_path: String
 }
 
+impl LocalFSFileType {
+    pub fn new(pointer: String) -> LocalFSFileType {
+        LocalFSFileType {
+            file_path: pointer
+        }
+    }
+}
+
 macro_rules! stat_time_to_SystemTime {
     ($msec:expr, $nsec:expr) => { SystemTime::UNIX_EPOCH + Duration::new($msec as u64, $nsec as u32) };
 }
@@ -47,13 +55,5 @@ impl FSFileTypeOps for LocalFSFileType {
         file.seek(SeekFrom::Start(offset as u64))?;
         file.read(buffer)?;
         Ok(())
-    }
-}
-
-impl LocalFSFileType {
-    pub fn new(pointer: String) -> LocalFSFileType {
-        LocalFSFileType {
-            file_path: pointer
-        }
     }
 }

@@ -1,6 +1,7 @@
 {
   "descriptor.txt": "raw:blabla",
   "nested": {
-    "another_file.txt": "raw:abc"
+    "another_file.txt": "raw:abc",
+    "a-big-one.csv":  "file:/home/francesco/channel-1000-run.csv"
   }
 }
